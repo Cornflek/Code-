@@ -1,0 +1,281 @@
+import pygame
+import random
+
+pygame.init()
+
+width = 1000
+height = 750
+
+screen_surface = pygame.display.set_mode((width, height))
+
+FPS = 30
+clock = pygame.time.Clock()
+
+class Game():
+
+    def __init__(self, player, enemy_group, player_bullet_group, enemy_bullet_group):
+        self.round_number = 1
+        self.score = 0
+
+        self.player = player
+        self.enemy_group = enemy_group
+        self.player_bullet_group = player_bullet_group
+        self.enemy_bullet_group = enemy_bullet_group
+
+        self.new_round_sound = pygame.mixer.Sound("257058__jagadamba__simulated-jet-engine-burner.mp3")
+        self.swallow_sound = pygame.mixer.Sound("257058__jagadamba__simulated-jet-engine-burner.mp3")
+        self.enemy_hit_sound = pygame.mixer.Sound("156031__iwiploppenisse__explosion.mp3")
+        self.player_hit_sound = pygame.mixer.Sound("156031__iwiploppenisse__explosion.mp3")
+
+        self.font = pygame.font.Font("Roboto_Mono.zip", 36)
+
+    def update(self):
+        self.alien_movement()
+        self.collision_check()
+        self.round_completion_check()
+
+    def draw(self):
+        white = (255, 255, 255)
+
+        score_text = self.font.render("SCORE: " + str(self.score), True, white)
+        score_text_coordinates = score_text.get_rect()
+        score_text_coordinates.centerx = width // 2
+        score_text_coordinates.top = 10
+
+        round_text = self.font.render("ROUND: " + str(self.round_number), True, white)
+        round_text_coordinates = round_text.get_rect()
+        round_text_coordinates.topleft = (20, 10)
+
+        health_text = self.font.render("HEALTH: " + str(self.player.health), True, white)
+        health_text_coordinates = health_text.get_rect()
+        health_text_coordinates.topright = (width - 20, 10)
+
+        screen_surface.blit(score_text, score_text_coordinates)
+        screen_surface.blit(round_text, round_text_coordinates)
+        screen_surface.blit(health_text, health_text_coordinates)
+        pygame.draw.line(screen_surface, white, (0, 50), (width, 50), 4)
+        pygame.draw.line(screen_surface, white, (0, height - 100), (width, height - 100), 4)
+
+    def alien_movement(self):
+        alien = False
+        for enemy in (self.enemy_group.sprites()):
+            if enemy.rect.left <= 0 or enemy.rect.right >= width:
+                alien = True
+
+        if alien:
+            swallowing = False
+            for enemy in (self.enemy_group.sprites()):
+                enemy.rect.y += 10 * self.round_number
+                enemy.direction = -1 * enemy.direction
+                enemy.rect.x += enemy.direction * enemy.speed
+
+                if enemy.rect.bottom >= height - 100:
+                    swallowing = True
+
+            if swallowing:
+                self.swallow_sound.play()
+                self.player.health -= 1
+                self.game_state_check("ENEMY CROSSED THE LIMIT", "PRESS ENTER")
+
+    def collision_check(self):
+        if pygame.sprite.groupcollide(self.player_bullet_group, self.enemy_group, True, True):
+            self.enemy_hit_sound.play()
+            self.score += 100
+
+        if pygame.sprite.spritecollide(self.player, self.enemy_bullet_group, True):
+            self.player_hit_sound.play()
+            self.player.health -= 1
+            self.game_state_check("PLAYER HIT", "PRESS ENTER")
+
+    def round_completion_check(self):
+        if not (self.enemy_group):
+            self.score += 1000 * self.round_number
+            self.round_number += 1
+            self.new_round_start()
+
+    def new_round_start(self):
+        for i in range(11):
+            for j in range(5):
+                enemy = Enemy(64 + i * 64, 64 + j * 64, self.round_number, self.enemy_bullet_group)
+                self.enemy_group.add(enemy)
+
+        self.new_round_sound.play()
+
+
+    def game_state_check(self, main_text, title_text):
+        self.enemy_bullet_group.empty()
+        self.player_bullet_group.empty()
+        self.player.refresh()
+
+        for enemy in self.enemy_group:
+            enemy.refresh()
+
+        if self.player.health == 0:
+            self.game_over()
+        else:
+            self.game_paused(main_text, title_text)
+
+    def game_paused(self, main_text, title_text):
+        global state
+
+        white = (255, 255, 255)
+
+      
+        main_text_coordinates = main_text.get_rect()
+        main_text_coordinates.center = (width // 2, height // 2)
+
+        title_text = self.font.render(title_text, True, white)
+        title_text_coordinates = title_text.get_rect()
+        title_text_coordinates.center = (width // 2, height // 2 + 64)
+
+        screen_surface.fill((100, 50, 100))
+        screen_surface.blit(main_text, main_text_coordinates)
+        screen_surface.blit(title_text, title_text_coordinates)
+        pygame.display.update()
+
+        paused = True
+        while paused:
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        paused = False
+                if event.type == pygame.QUIT:
+                    paused = False
+                    state = False
+
+    def game_over(self):
+        self.game_paused("FINAL SCORE: " + str(self.score), "PRESS ENTER")
+
+        self.score = 0
+        self.round_number = 1
+
+        self.player.health = 5
+
+        self.enemy_group.empty()
+        self.enemy_bullet_group.empty()
+        self.player_bullet_group.empty()
+
+        self.new_round_start()
+
+class Player(pygame.sprite.Sprite):
+    def __init__(self, bullet_group):
+        super().__init__()
+        self.image = pygame.image.load("war-defense.png")
+        self.rect = self.image.get_rect()
+        self.rect.centerx = width // 2
+        self.rect.bottom = height
+
+        self.health = 5
+        self.speed = 10
+
+        self.bullet_group = bullet_group
+        self.player_shoot_sound = pygame.mixer.Sound("232184__unfa__missle-launch-01.flac")
+
+    def update(self):
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] and self.rect.left > 0:
+            self.rect.x -= self.speed
+        if keys[pygame.K_RIGHT] and self.rect.right < width:
+            self.rect.x += self.speed
+
+    def shoot(self):
+        if len(self.bullet_group) < 3:
+            self.player_shoot_sound.play()
+            PlayerBullet(self.rect.centerx, self.rect.top, self.bullet_group)
+
+    def refresh(self):
+        self.rect.centerx = width // 2
+
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self, x, y, speed, bullet_group):
+        super().__init__()
+        self.image = pygame.image.load("uav (2).png")
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+
+        self.start_x = x
+        self.start_y = y
+
+        self.direction = 1
+        self.speed = speed
+        self.bullet_group = bullet_group
+
+        self.enemy_shoot_sound = pygame.mixer.Sound("187734__qubodup__idle-f-22-jet-plane.flac")
+
+    def update(self):
+        self.rect.x += self.direction * self.speed
+        if random.randint(0, 1000) > 999 and len(self.bullet_group) < 3:
+            self.enemy_shoot_sound.play()
+            self.shoot()
+
+    def shoot(self):
+        EnemyBullet(self.rect.centerx, self.rect.bottom, self.bullet_group)
+
+    def refresh(self):
+        self.rect.topleft = (self.start_x, self.start_y)
+        self.direction = 1
+
+class PlayerBullet(pygame.sprite.Sprite):
+    def __init__(self, x, y, bullet_group):
+        super().__init__()
+        self.image = pygame.image.load("computer.png")
+        self.rect = self.image.get_rect()
+        self.rect.centerx = x
+        self.rect.centery = y
+
+        self.speed = 10
+        bullet_group.add(self)
+
+    def update(self):
+        self.rect.y -= self.speed
+        if self.rect.bottom < 0:
+            self.kill()
+
+class EnemyBullet(pygame.sprite.Sprite):
+    def __init__(self, x, y, bullet_group):
+        super().__init__()
+        self.image = pygame.image.load("computer.png")
+        self.rect = self.image.get_rect()
+        self.rect.centerx = x
+        self.rect.centery = y
+        self.speed = 10
+        bullet_group.add(self)
+
+    def update(self):
+        self.rect.y += self.speed
+        if self.rect.top > height:
+            self.kill()
+
+player_bullet_group_1 = pygame.sprite.Group()
+enemy_bullet_group_1 = pygame.sprite.Group()
+player_group_1 = pygame.sprite.Group()
+player_1 = Player(player_bullet_group_1)
+player_group_1.add(player_1)
+enemy_group_1 = pygame.sprite.Group()
+game_1 = Game(player_1, enemy_group_1, player_bullet_group_1, enemy_bullet_group_1)
+game_1.new_round_start()
+state = True
+
+while state:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            state = False
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                player_1.shoot()
+
+    screen_surface.fill((100, 100, 100))
+    player_group_1.update()
+    player_group_1.draw(screen_surface)
+    enemy_group_1.update()
+    enemy_group_1.draw(screen_surface)
+    player_bullet_group_1.update()
+    player_bullet_group_1.draw(screen_surface)
+    enemy_bullet_group_1.update()
+    enemy_bullet_group_1.draw(screen_surface)
+    game_1.update()
+    game_1.draw()
+    pygame.display.update()
+    clock.tick(FPS)
+
+pygame.quit()
